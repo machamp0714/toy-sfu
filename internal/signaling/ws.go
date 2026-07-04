@@ -6,12 +6,43 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 
 	"github.com/machamp0714/toy-sfu/internal/room"
 )
+
+// pliInterval is how often a Picture Loss Indication is sent to a publisher
+// for each of its video tracks, matching the cadence used in Pion's own
+// examples (e.g. examples/broadcast, examples/sfu-ws).
+const pliInterval = 3 * time.Second
+
+// rtcpWriter is the subset of *webrtc.PeerConnection needed to send RTCP
+// feedback packets. Narrowing to an interface lets tests inject a fake
+// without a real PeerConnection.
+type rtcpWriter interface {
+	WriteRTCP(pkts []rtcp.Packet) error
+}
+
+// sendPeriodicPLI periodically writes a Picture Loss Indication for
+// mediaSSRC to w, prompting the original publisher to send a fresh
+// keyframe. Without this, a participant who joins mid-stream has no way
+// to request one and can wait an arbitrarily long time (until the
+// publisher's encoder happens to emit its own periodic keyframe) before
+// they can decode any video. It stops once WriteRTCP returns an error
+// (e.g. because the PeerConnection closed).
+func sendPeriodicPLI(w rtcpWriter, mediaSSRC uint32, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for range ticker.C {
+		if err := w.WriteRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: mediaSSRC}}); err != nil {
+			return
+		}
+	}
+}
 
 var upgrader = websocket.Upgrader{
 	// This is a local learning project only, not a production service:
@@ -126,6 +157,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	pc.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		rm.Publish(participantID, track)
+
+		if track.Kind() == webrtc.RTPCodecTypeVideo {
+			go sendPeriodicPLI(pc, uint32(track.SSRC()), pliInterval)
+		}
 	})
 
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
