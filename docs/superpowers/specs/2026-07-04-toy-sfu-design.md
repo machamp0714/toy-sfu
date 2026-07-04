@@ -76,14 +76,23 @@ WebSocketメッセージ（JSON、自作の最小プロトコル）:
 | type | 方向 | 内容 |
 |---|---|---|
 | `join` | Client→Server | `{room: string}` — Room不在なら新規作成 |
-| `offer` | Client→Server（初回）/ Server→Client（トラック追加時の再ネゴ） | `{sdp: string}` |
-| `answer` | 相手方向 | `{sdp: string}` |
+| `offer` | Server→Client（常にサーバーが送信） | `{sdp: string}` |
+| `answer` | Client→Server（常にブラウザが送信） | `{sdp: string}` |
 | `ice-candidate` | 双方向 | `{candidate: RTCIceCandidateInit}` |
 | （close） | ソケット切断で暗黙的にleave | Room内の他participantへ再ネゴをトリガー |
 
-初回接続は**ブラウザがOfferを作成**（自分のマイク/カメラトラックを載せて）し、サーバーがAnswerを返す。以後、他の参加者が参加してトラックが増えるたびに**サーバー側がOfferを作り直して再送**（renegotiation）し、ブラウザがAnswerを返す非対称な流れとする。
+**常にサーバー側がOfferer**（Pion公式サンプル `sfu-ws` と同型）。ブラウザは常にAnswerとICE candidateのみ送信する均一モデルとし、初回接続時とトラック追加時のリネゴシエーションでロールが変わらないようにする。これによりglare（同時Offer衝突）が構造的に起きにくくなる。
+
+流れ:
+1. Browser: WS接続 + `join{room}`
+2. Server: Participant用のPeerConnectionを作成（受信用transceiverを事前追加）
+3. Server: `CreateOffer` → `SetLocalDescription` → `offer`送信
+4. Browser: `setRemoteDescription(offer)` → 自分のmic/cameraトラックを`addTrack` → `CreateAnswer` → `answer`返信
+5. 以降、他参加者のトラック追加時も常にServerが`CreateOffer`を作り直すだけ（ロール不変）
 
 ICE設定はSTUNのみ（例: `stun:stun.l.google.com:19302`）。TURNは使用しない。
+
+**既知の簡略化**: 複数のリネゴシエーションが短時間に重なる場合（例: 2〜3人がほぼ同時に参加）に発生しうるglare（`signalingState`が`stable`に戻る前に次のOfferを作ってしまう）は、このMVPでは明示的に対処しない。手動テストで参加のタイミングをずらせば通常は再現しないが、もし`have-local-offer`のまま詰まる症状が出たら、既存ノート（`WebRTC 1.0`の「3つの状態機械を統合して読む」節）の`signalingState`遷移図を使って切り分けるのが一番の学習ポイントになる。
 
 ## RTP転送のデータフロー
 
