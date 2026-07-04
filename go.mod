@@ -5,6 +5,7 @@ go 1.24.0
 toolchain go1.24.13
 
 require (
+	github.com/gorilla/websocket v1.5.3
 	github.com/pion/interceptor v0.1.45
 	github.com/pion/rtp v1.10.2
 	github.com/pion/webrtc/v4 v4.2.16
