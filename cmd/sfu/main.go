@@ -3,11 +3,18 @@ package main
 import (
 	"log"
 	"net/http"
+
+	"github.com/machamp0714/toy-sfu/internal/room"
+	"github.com/machamp0714/toy-sfu/internal/signaling"
 )
 
 func newMux() *http.ServeMux {
+	manager := room.NewManager()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthzHandler)
+	mux.Handle("/ws", signaling.NewHandler(manager))
+	mux.Handle("/", http.FileServer(http.Dir("web")))
 	return mux
 }
 

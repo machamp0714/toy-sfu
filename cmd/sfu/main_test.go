@@ -19,3 +19,14 @@ func TestHealthzHandler(t *testing.T) {
 		t.Fatalf("body = %q, want %q", rec.Body.String(), "ok")
 	}
 }
+
+func TestWsRouteRejectsNonWebSocketRequest(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	rec := httptest.NewRecorder()
+
+	newMux().ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Fatalf("expected a non-200 status for a non-websocket request to /ws, got 200")
+	}
+}
