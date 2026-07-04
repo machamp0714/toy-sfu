@@ -52,11 +52,31 @@ func newRoom() *Room {
 	return &Room{participants: make(map[string]*Participant)}
 }
 
-// Join adds p to the room.
-func (r *Room) Join(p *Participant) {
+// Join adds p to the room and subscribes it to every track already
+// published by other participants (this alone is enough to make Pion fire
+// its OnNegotiationNeeded callback for p). It returns the IDs of the
+// tracks p was subscribed to — mainly so tests can observe this.
+func (r *Room) Join(p *Participant) []string {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.participants[p.ID] = p
+	tracks := append([]*publishedTrack(nil), r.published...)
+	r.mu.Unlock()
+
+	var subscribed []string
+	for _, pt := range tracks {
+		local, err := newLocalTrackFor(pt, p)
+		if err != nil {
+			continue
+		}
+
+		r.mu.Lock()
+		pt.subscribers[p.ID] = local
+		r.mu.Unlock()
+
+		subscribed = append(subscribed, pt.track.ID())
+	}
+
+	return subscribed
 }
 
 // Leave removes participantID from the room, and from any published

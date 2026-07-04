@@ -104,3 +104,26 @@ func TestRoomForwardCopiesPacketsToAllSubscribers(t *testing.T) {
 		}
 	}
 }
+
+func TestRoomJoinSubscribesToAlreadyPublishedTracks(t *testing.T) {
+	r := newRoom()
+	publisher := newTestParticipant(t, "publisher")
+	r.Join(publisher)
+
+	track := &fakeRemoteTrack{
+		id:       "video",
+		streamID: "stream-1",
+		codec:    webrtc.RTPCodecParameters{RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}},
+	}
+	r.Publish("publisher", track)
+
+	lateJoiner := newTestParticipant(t, "late")
+	subscribed := r.Join(lateJoiner)
+
+	if len(subscribed) != 1 || subscribed[0] != "video" {
+		t.Fatalf("Join returned subscribed = %v, want [video]", subscribed)
+	}
+	if got := len(lateJoiner.PC.GetSenders()); got != 1 {
+		t.Fatalf("lateJoiner.PC.GetSenders() = %d, want 1", got)
+	}
+}
