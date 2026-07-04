@@ -39,7 +39,9 @@ func (m *Manager) Leave(name, participantID string) {
 
 	if r.Leave(participantID) {
 		m.mu.Lock()
-		delete(m.rooms, name)
+		if cur, ok := m.rooms[name]; ok && cur == r && r.Count() == 0 {
+			delete(m.rooms, name)
+		}
 		m.mu.Unlock()
 	}
 }
